@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>RAZONAMIENTO MECANICO2 - PROFESIONAL TRAINIG</title>
+  <title>RAZONAMIENTO MECÁNICO</title>
   <style>
     body { font-family: Arial, sans-serif; margin:0; display:flex; flex-direction:column; }
     header {
@@ -55,9 +55,26 @@
     /************* CONFIG *************/
     const TOTAL_TIME      = 25 * 60; // 25 min
     const WARNING_MINUTES = 5;       // aviso cuando queden 5 min
-    const DELAY_SECONDS   = 5;       // cuenta regresiva del modal
+    const DELAY_SECONDS   = 10;       // cuenta regresiva del modal
     const NEXT_URL        = "https://jacosta-25.github.io/RazonamientoAbstracto/";
     const SECTIONS        = 2;       // todos tus forms: 2 secciones (ignora el primer “Siguiente”)
+
+    // Clave de bloqueo anti-regreso (propia de esta ruta)
+    const COMPLETED_KEY = "completed:" + location.pathname;
+
+    /************* BLOQUEO AL VOLVER *************/
+    // Si ya se marcó como 'completado' en esta pestaña, redirige directo a la prueba siguiente.
+    if (sessionStorage.getItem(COMPLETED_KEY) === "1") {
+      // Opcional: muestra aviso rápido antes de redirigir
+      // alert("Esta prueba ya fue enviada. Te llevamos a la siguiente.");
+      window.location.replace(NEXT_URL);
+    }
+    // Además, si el navegador restaura desde bfcache al volver:
+    window.addEventListener("pageshow", (e) => {
+      if (sessionStorage.getItem(COMPLETED_KEY) === "1") {
+        window.location.replace(NEXT_URL);
+      }
+    });
 
     /************* TIMER + AVISO *************/
     const timerEl  = document.getElementById("timer");
@@ -123,15 +140,18 @@
       if (handled) return;
 
       if (remainingTransitions > 0) {
-        remainingTransitions--;
+        remainingTransitions--;            // ignoramos el “Siguiente” de la 1ª sección
         statusEl.textContent = `Sección avanzada.`;
         return;
       }
 
-      // Confirmación final → modal 5s
+      // Confirmación final → marcar completado + modal 5s
       handled = true;
+      sessionStorage.setItem(COMPLETED_KEY, "1");  // <<--- BLOQUEA reingreso en esta pestaña
       statusEl.textContent = "¡Respuesta enviada!";
       showModalCountdown();
+      // Opcional extra (cierra el contenido anterior visualmente):
+      // iframe.src = "";
     });
 
     /************* MODAL + CUENTA REGRESIVA *************/
@@ -173,4 +193,8 @@
   </script>
 </body>
 </html>
+
+
+ 
+
 
