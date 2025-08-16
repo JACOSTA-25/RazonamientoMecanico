@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>RAZONAMIENTO MECA2</title>
+  <title>RAZONAMIENTO MECANICO2 - PROFESIONAL TRAINIG</title>
   <style>
     body { font-family: Arial, sans-serif; margin:0; display:flex; flex-direction:column; }
     header {
@@ -15,9 +15,18 @@
     #timer { font-size:1.4em; font-weight:700; }
     #status { font-weight:600; }
     #warning { font-weight:700; }
-    header.warn { background:#b45309; }  /* naranja */
-    header.danger { background:#991b1b; }/* rojo (solo si quieres usarlo) */
+    header.warn { background:#b45309; }
     iframe { margin-top:56px; width:100%; height:calc(100vh - 56px); border:none; }
+
+    /* Modal */
+    .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:999; }
+    .hidden { display:none; }
+    .modal { background:#fff; color:#111; width:min(520px,92vw); border-radius:12px; padding:18px; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+    .modal h3 { margin:0 0 8px; font-size:18px; }
+    .modal p { margin:0 0 12px; }
+    .actions { display:flex; gap:10px; justify-content:flex-end; }
+    .actions button { border:0; border-radius:8px; padding:8px 12px; cursor:pointer; }
+    .primary { background:#1f4aff; color:#fff; }
   </style>
 </head>
 <body>
@@ -28,23 +37,34 @@
     <span id="warning"></span>
   </header>
 
-  <!-- REEMPLAZA el src por el de CADA Google Form (mejor URL larga con ?embedded=true) -->
+  <!-- Reemplaza el src por el de CADA Google Form (mejor URL larga con ?embedded=true) -->
   <iframe id="form" src="https://docs.google.com/forms/d/e/1FAIpQLScRLd3IAtQQ86_JTFi-FtNUT424vJw-eiEQW_87-QW8Tq-Wgw/viewform?usp=dialog"></iframe>
-  <!-- También funciona con forms.gle/... -->
+
+  <!-- Modal sin "Cancelar" -->
+  <div id="overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <h3 id="modalTitle">¡Respuesta enviada!</h3>
+      <p>Se abrirá la siguiente prueba en <strong><span id="count">5</span> s</strong>.</p>
+      <div class="actions">
+        <button id="openNow" class="primary">Abrir ahora</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     /************* CONFIG *************/
-    const TOTAL_TIME = 25 * 60; // 25 min
-    const WARNING_MINUTES = 5;   // <<< Aviso con 5 minutos restantes
-    const NEXT_URL   = "https://jacosta-25.github.io/RazonamientoAbstracto/";
-    const SECTIONS   = 2; // todos tus forms tienen 2 secciones: ignoramos el 1er "Siguiente"
+    const TOTAL_TIME      = 25 * 60; // 25 min
+    const WARNING_MINUTES = 5;       // aviso cuando queden 5 min
+    const DELAY_SECONDS   = 5;       // cuenta regresiva del modal
+    const NEXT_URL        = "https://jacosta-25.github.io/RazonamientoAbstracto/";
+    const SECTIONS        = 2;       // todos tus forms: 2 secciones (ignora el primer “Siguiente”)
 
     /************* TIMER + AVISO *************/
-    const timerEl   = document.getElementById("timer");
-    const statusEl  = document.getElementById("status");
-    const warnEl    = document.getElementById("warning");
-    const topbar    = document.getElementById("topbar");
-    const iframe    = document.getElementById("form");
+    const timerEl  = document.getElementById("timer");
+    const statusEl = document.getElementById("status");
+    const warnEl   = document.getElementById("warning");
+    const topbar   = document.getElementById("topbar");
+    const iframe   = document.getElementById("form");
 
     const qs = new URLSearchParams(location.search);
     let start = qs.get("startTime") ? parseInt(qs.get("startTime"),10) : Date.now();
@@ -58,17 +78,13 @@
       if (rem > 0) {
         const m = Math.floor(rem/60), s = rem % 60;
         timerEl.textContent = `${m}:${s<10?"0":""}${s}`;
-
-        // Aviso 5 minutos (una sola vez)
         if (!warned5 && rem <= WARNING_AT) {
           warned5 = true;
           topbar.classList.add('warn');
           warnEl.textContent = `⚠️ Quedan ${WARNING_MINUTES} minutos. Por favor, revisa y prepara tu envío.`;
-          // (opcional) window.alert(`Quedan ${WARNING_MINUTES} minutos. Por favor, revisa y prepara tu envío.`);
         }
       } else {
         timerEl.textContent = "00:00";
-        // topbar.classList.add('danger'); // opcional: rojo al terminar
         alert("El tiempo ha expirado. Este formulario ya no está disponible.");
         iframe.src = ""; // Limpia el iframe
         clearInterval(tid);
@@ -95,9 +111,6 @@
     });
 
     // 2) Detectar secciones vs envío final
-    //    - Espera a 'ready' (estabiliza redirecciones iniciales)
-    //    - Ignora (SECTIONS - 1) cargas (botón Siguiente)
-    //    - La siguiente carga => confirmación final => abrir NEXT_URL
     let ready = false, handled = false, settle = null;
     let remainingTransitions = Math.max(0, SECTIONS - 1); // para 2 secciones => 1 transición que ignoramos
 
@@ -115,9 +128,37 @@
         return;
       }
 
-      // sin transiciones pendientes: es la confirmación final
+      // Confirmación final → modal 5s
       handled = true;
-      statusEl.textContent = "¡Respuesta enviada! Abriendo…";
+      statusEl.textContent = "¡Respuesta enviada!";
+      showModalCountdown();
+    });
+
+    /************* MODAL + CUENTA REGRESIVA *************/
+    const overlay   = document.getElementById("overlay");
+    const countSpan = document.getElementById("count");
+    const btnOpen   = document.getElementById("openNow");
+    let countdownId = null;
+    let remaining   = DELAY_SECONDS;
+
+    function showModalCountdown(){
+      remaining = DELAY_SECONDS;
+      countSpan.textContent = remaining;
+      overlay.classList.remove("hidden");
+      countdownId = setInterval(() => {
+        remaining--;
+        countSpan.textContent = remaining;
+        if (remaining <= 0) {
+          clearInterval(countdownId);
+          overlay.classList.add("hidden");
+          openNext();
+        }
+      }, 1000);
+    }
+
+    btnOpen.addEventListener("click", () => {
+      if (countdownId) clearInterval(countdownId);
+      overlay.classList.add("hidden");
       openNext();
     });
 
@@ -132,6 +173,4 @@
   </script>
 </body>
 </html>
-
-
 
