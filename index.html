@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>RAZONAMIENTO MECÁNICO</title>
+  <title>RAZONAMIENTO NUMÉRICO</title>
   <style>
     body { font-family: Arial, sans-serif; margin:0; display:flex; flex-direction:column; }
     header {
@@ -45,9 +45,9 @@
     <div class="modal">
       <h3 id="modalTitle">¡Respuesta enviada!</h3>
       <p>Se abrirá la siguiente prueba en <strong><span id="count">5</span> s</strong>.</p>
-      <div class="actions">
+      <!--<div class="actions">
         <button id="openNow" class="primary">Abrir ahora</button>
-      </div>
+      </div> -->
     </div>
   </div>
 
@@ -57,38 +57,47 @@
     const WARNING_MINUTES = 5;       // aviso cuando queden 5 min
     const DELAY_SECONDS   = 10;       // cuenta regresiva del modal
     const NEXT_URL        = "https://jacosta-25.github.io/RazonamientoAbstracto/";
-    const SECTIONS        = 2;       // todos tus forms: 2 secciones (ignora el primer “Siguiente”)
+    const SECTIONS        = 2;       // tus forms: 2 secciones (ignora el primer “Siguiente”)
+    const COMPLETED_KEY   = "completed:" + location.pathname; // clave por página para bloqueo al volver
 
-    // Clave de bloqueo anti-regreso (propia de esta ruta)
-    const COMPLETED_KEY = "completed:" + location.pathname;
+    /************* REFERENCIAS DOM *************/
+    const topbar   = document.getElementById("topbar");
+    const timerEl  = document.getElementById("timer");
+    const statusEl = document.getElementById("status");
+    const warnEl   = document.getElementById("warning");
+    const iframe   = document.getElementById("form");
+    const overlay  = document.getElementById("overlay");
+    const countEl  = document.getElementById("count");
+    const btnOpen  = document.getElementById("openNow");
 
-    /************* BLOQUEO AL VOLVER *************/
-    // Si ya se marcó como 'completado' en esta pestaña, redirige directo a la prueba siguiente.
-    if (sessionStorage.getItem(COMPLETED_KEY) === "1") {
-      // Opcional: muestra aviso rápido antes de redirigir
-      // alert("Esta prueba ya fue enviada. Te llevamos a la siguiente.");
-      window.location.replace(NEXT_URL);
+    /************* BLOQUEAR AL VOLVER (SIN REDIRIGIR) *************/
+    function blockPage(message){
+      iframe.src = "";                           // deshabilita el contenido
+      statusEl.textContent = message || "Esta prueba ya fue enviada en esta pestaña.";
+      const prep = document.getElementById("prep");
+      if (prep) prep.disabled = true;            // no permitir re-preabrir
+      try { clearInterval(tid); } catch(e) {}     // detener timer si ya corría
+      timerEl.textContent = "—";
+      topbar.classList.add("warn");
     }
-    // Además, si el navegador restaura desde bfcache al volver:
-    window.addEventListener("pageshow", (e) => {
+    if (sessionStorage.getItem(COMPLETED_KEY) === "1") {
+      blockPage("Esta prueba ya fue enviada en esta pestaña.");
+    }
+    // Si el navegador reusa caché de página al volver
+    window.addEventListener("pageshow", () => {
       if (sessionStorage.getItem(COMPLETED_KEY) === "1") {
-        window.location.replace(NEXT_URL);
+        blockPage("Esta prueba ya fue enviada en esta pestaña.");
       }
     });
 
     /************* TIMER + AVISO *************/
-    const timerEl  = document.getElementById("timer");
-    const statusEl = document.getElementById("status");
-    const warnEl   = document.getElementById("warning");
-    const topbar   = document.getElementById("topbar");
-    const iframe   = document.getElementById("form");
-
     const qs = new URLSearchParams(location.search);
     let start = qs.get("startTime") ? parseInt(qs.get("startTime"),10) : Date.now();
     if (!qs.get("startTime")) { qs.set("startTime", String(start)); history.replaceState({}, "", `${location.pathname}?${qs}`); }
 
     const WARNING_AT = WARNING_MINUTES * 60;
     let warned5 = false;
+    let tid = null;
 
     function tick(){
       const rem = TOTAL_TIME - Math.floor((Date.now()-start)/1000);
@@ -107,7 +116,7 @@
         clearInterval(tid);
       }
     }
-    tick(); const tid = setInterval(tick,1000);
+    tick(); tid = setInterval(tick,1000);
 
     /************* AUTO-CONTINUACIÓN *************/
     // 1) Preabrir pestaña para evitar bloqueos
@@ -129,7 +138,7 @@
 
     // 2) Detectar secciones vs envío final
     let ready = false, handled = false, settle = null;
-    let remainingTransitions = Math.max(0, SECTIONS - 1); // para 2 secciones => 1 transición que ignoramos
+    let remainingTransitions = Math.max(0, SECTIONS - 1); // para 2 secciones => 1 transición ignorada
 
     iframe.addEventListener("load", () => {
       if (!ready) {
@@ -145,29 +154,25 @@
         return;
       }
 
-      // Confirmación final → marcar completado + modal 5s
+      // Confirmación final → marcar completado + modal
       handled = true;
-      sessionStorage.setItem(COMPLETED_KEY, "1");  // <<--- BLOQUEA reingreso en esta pestaña
+      sessionStorage.setItem(COMPLETED_KEY, "1");  // <<— marca esta pestaña como completada
       statusEl.textContent = "¡Respuesta enviada!";
       showModalCountdown();
-      // Opcional extra (cierra el contenido anterior visualmente):
+      // Opcional visual: limpiar el iframe para que no sigan viendo el OK de Google
       // iframe.src = "";
     });
 
     /************* MODAL + CUENTA REGRESIVA *************/
-    const overlay   = document.getElementById("overlay");
-    const countSpan = document.getElementById("count");
-    const btnOpen   = document.getElementById("openNow");
+    const DELAY_SECONDS_FIXED = DELAY_SECONDS;
     let countdownId = null;
-    let remaining   = DELAY_SECONDS;
-
     function showModalCountdown(){
-      remaining = DELAY_SECONDS;
-      countSpan.textContent = remaining;
+      let remaining = DELAY_SECONDS_FIXED;
+      countEl.textContent = remaining;
       overlay.classList.remove("hidden");
       countdownId = setInterval(() => {
         remaining--;
-        countSpan.textContent = remaining;
+        countEl.textContent = remaining;
         if (remaining <= 0) {
           clearInterval(countdownId);
           overlay.classList.add("hidden");
@@ -175,7 +180,6 @@
         }
       }, 1000);
     }
-
     btnOpen.addEventListener("click", () => {
       if (countdownId) clearInterval(countdownId);
       overlay.classList.add("hidden");
@@ -184,7 +188,7 @@
 
     function openNext(){
       if (nextWin && !nextWin.closed) {
-        nextWin.location.href = NEXT_URL;            // usa la pestaña preabierta
+        nextWin.location.href = NEXT_URL;            // pestaña preabierta
       } else {
         const w = window.open(NEXT_URL, "_blank");   // intenta nueva pestaña
         if (!w) window.location.href = NEXT_URL;     // si bloquean, misma pestaña
@@ -193,8 +197,3 @@
   </script>
 </body>
 </html>
-
-
- 
-
-
