@@ -3,70 +3,89 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>RAZONAMIENTO MECA</title>
+  <title>RAZONAMIENTO NUMÉRICO</title>
   <style>
     body { font-family: Arial, sans-serif; margin:0; display:flex; flex-direction:column; }
     header {
       position:fixed; top:0; left:0; right:0; z-index:10;
       background:#333; color:#fff; display:flex; gap:12px; flex-wrap:wrap;
-      align-items:center; justify-content:center; padding:8px 10px;
+      align-items:center; justify-content:center; padding:8px 10px; transition:background .25s ease;
     }
     header button { background:#fff; color:#333; border:0; border-radius:8px; padding:6px 10px; cursor:pointer; }
     #timer { font-size:1.4em; font-weight:700; }
     #status { font-weight:600; }
+    #warning { font-weight:700; }
+    header.warn { background:#b45309; }  /* naranja */
+    header.danger { background:#991b1b; }/* rojo (solo si quieres usarlo) */
     iframe { margin-top:56px; width:100%; height:calc(100vh - 56px); border:none; }
   </style>
 </head>
 <body>
-  <header>
+  <header id="topbar">
     <span>Tiempo restante: <span id="timer">00:00</span></span>
     <button id="prep" title="Evita bloqueo de pop-ups">Activar auto-continuación</button>
     <span id="status"></span>
+    <span id="warning"></span>
   </header>
 
-  <!-- Cambia este src por el de CADA Google Form -->
-  <iframe id="form" src="https://forms.gle/L3uaNBst3g1LQyzs8"></iframe>
+  <!-- REEMPLAZA el src por el de CADA Google Form (mejor URL larga con ?embedded=true) -->
+  <iframe id="form" src="https://docs.google.com/forms/d/e/1FAIpQLScRLd3IAtQQ86_JTFi-FtNUT424vJw-eiEQW_87-QW8Tq-Wgw/viewform?usp=dialog"></iframe>
+  <!-- También funciona con forms.gle/... -->
 
   <script>
     /************* CONFIG *************/
-    const TOTAL_TIME = 25 * 60; // 25min
-    // Puedes sobreescribir con ?next=... en la URL si quieres encadenar dinámicamente
-    const NEXT_URL = new URLSearchParams(location.search).get("next") || "https://jacosta-25.github.io/RazonamientoAbstracto/";
+    const TOTAL_TIME = 25 * 60; // 25 min
+    const WARNING_MINUTES = 5;   // <<< Aviso con 5 minutos restantes
+    const NEXT_URL   = "https://jacosta-25.github.io/RazonamientoAbstracto/";
+    const SECTIONS   = 2; // todos tus forms tienen 2 secciones: ignoramos el 1er "Siguiente"
 
-    /************* TIMER *************/
-    const timerEl = document.getElementById("timer");
+    /************* TIMER + AVISO *************/
+    const timerEl   = document.getElementById("timer");
+    const statusEl  = document.getElementById("status");
+    const warnEl    = document.getElementById("warning");
+    const topbar    = document.getElementById("topbar");
+    const iframe    = document.getElementById("form");
+
     const qs = new URLSearchParams(location.search);
     let start = qs.get("startTime") ? parseInt(qs.get("startTime"),10) : Date.now();
     if (!qs.get("startTime")) { qs.set("startTime", String(start)); history.replaceState({}, "", `${location.pathname}?${qs}`); }
+
+    const WARNING_AT = WARNING_MINUTES * 60;
+    let warned5 = false;
 
     function tick(){
       const rem = TOTAL_TIME - Math.floor((Date.now()-start)/1000);
       if (rem > 0) {
         const m = Math.floor(rem/60), s = rem % 60;
         timerEl.textContent = `${m}:${s<10?"0":""}${s}`;
+
+        // Aviso 5 minutos (una sola vez)
+        if (!warned5 && rem <= WARNING_AT) {
+          warned5 = true;
+          topbar.classList.add('warn');
+          warnEl.textContent = `⚠️ Quedan ${WARNING_MINUTES} minutos. Por favor, revisa y prepara tu envío.`;
+          // (opcional) window.alert(`Quedan ${WARNING_MINUTES} minutos. Por favor, revisa y prepara tu envío.`);
+        }
       } else {
         timerEl.textContent = "00:00";
+        // topbar.classList.add('danger'); // opcional: rojo al terminar
         alert("El tiempo ha expirado. Este formulario ya no está disponible.");
-        document.getElementById("form").src = ""; // limpiar
+        iframe.src = ""; // Limpia el iframe
         clearInterval(tid);
       }
     }
-    tick(); const tid = setInterval(tick, 1000);
+    tick(); const tid = setInterval(tick,1000);
 
     /************* AUTO-CONTINUACIÓN *************/
-    const iframe = document.getElementById("form");
-    const statusEl = document.getElementById("status");
-
     // 1) Preabrir pestaña para evitar bloqueos
     let nextWin = null;
     document.getElementById("prep").addEventListener("click", () => {
-      if (!NEXT_URL) { alert("Configura NEXT_URL o usa ?next=..."); return; }
       if (!nextWin || nextWin.closed) {
         nextWin = window.open("about:blank", "_blank");
         if (nextWin) {
           nextWin.document.write("<title>Próxima prueba</title><p>Esperando envío…</p>");
           nextWin.document.close();
-          alert("Listo. Cuando envíes el formulario, se cargará la siguiente prueba.");
+          alert("Listo. Al ENVIAR (pantalla final), se cargará la siguiente prueba.");
         } else {
           alert("El navegador bloqueó la pestaña. Permite pop-ups para este sitio.");
         }
@@ -75,30 +94,39 @@
       }
     });
 
-    // 2) Detectar envío con el 'load' del iframe (sin leer su contenido)
+    // 2) Detectar secciones vs envío final
+    //    - Espera a 'ready' (estabiliza redirecciones iniciales)
+    //    - Ignora (SECTIONS - 1) cargas (botón Siguiente)
+    //    - La siguiente carga => confirmación final => abrir NEXT_URL
     let ready = false, handled = false, settle = null;
+    let remainingTransitions = Math.max(0, SECTIONS - 1); // para 2 secciones => 1 transición que ignoramos
+
     iframe.addEventListener("load", () => {
-      // forms.gle suele redirigir al cargar: esperamos ~1.5s para considerar "listo"
       if (!ready) {
         if (settle) clearTimeout(settle);
-        settle = setTimeout(() => { ready = true; }, 1500);
+        settle = setTimeout(() => { ready = true; }, 1200);
         return;
       }
       if (handled) return;
+
+      if (remainingTransitions > 0) {
+        remainingTransitions--;
+        statusEl.textContent = `Sección avanzada.`;
+        return;
+      }
+
+      // sin transiciones pendientes: es la confirmación final
       handled = true;
       statusEl.textContent = "¡Respuesta enviada! Abriendo…";
       openNext();
     });
 
     function openNext(){
-      if (!NEXT_URL) return;
-      // Si preabrimos, redirige esa pestaña
       if (nextWin && !nextWin.closed) {
-        nextWin.location.href = NEXT_URL;
+        nextWin.location.href = NEXT_URL;            // usa la pestaña preabierta
       } else {
-        // Intento nueva pestaña; si la bloquean, abrir en misma pestaña
-        const w = window.open(NEXT_URL, "_blank");
-        if (!w) window.location.href = NEXT_URL;
+        const w = window.open(NEXT_URL, "_blank");   // intenta nueva pestaña
+        if (!w) window.location.href = NEXT_URL;     // si bloquean, misma pestaña
       }
     }
   </script>
